@@ -1,8 +1,33 @@
 import 'package:flutter/material.dart';
 //import 'task_repository.dart';
+import 'dart:convert';
+import 'dart:math';
+import 'package:http/http.dart' as http;
 
 void main() {
   runApp(MyApp());
+}
+
+class TaskApiService {
+  static Future<List<Task>> fetchTasks() async {
+    final response = await http.get(Uri.parse("https://dummyjson.com/todos"));
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode((response.body));
+      final List todos = data["todos"];
+
+      return todos.map((todo) {
+        return Task(
+          title: todo["todo"],
+          deadline: "brak",
+          done: todo["completed"],
+          priority: "sredni",
+        );
+      }).toList();
+    } else {
+      throw Exception("Blad pobierania danych");
+    }
+  }
 }
 
 class MyApp extends StatelessWidget {
@@ -22,22 +47,23 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  String filter = "wszystkie";
   String selectedFilter = "wszystkie";
+  late Future<void> loadTasksFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    loadTasksFuture = _loadTasks();
+  }
+
+  Future<void> _loadTasks() async {
+    if (TaskRepository.tasks.isEmpty) {
+      TaskRepository.tasks = await TaskApiService.fetchTasks();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    int doneCounter = TaskRepository.tasks
-        .where((task) => task.done)
-        .length;
-
-    List<Task> filteredTasks = TaskRepository.tasks;
-    if (selectedFilter == "wykonane") {
-      filteredTasks = TaskRepository.tasks.where((task) => task.done).toList();
-    } else if (selectedFilter == "do zrobienia") {
-      filteredTasks = TaskRepository.tasks.where((task) => !task.done).toList();
-    }
-
     return Scaffold(
       appBar: AppBar(
         title: Text("KrakFlow"),
@@ -63,138 +89,161 @@ class _HomeScreenState extends State<HomeScreen> {
                     )
                   ],
                 );
-              }
+              },
           );
-        })
+        },
+        )
         ],
       ),
-      body: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Column(
-                children: [
-                  Text(
-                    "Liczba zadan: ${TaskRepository.tasks.length -
-                        doneCounter}, zrobiono: ${doneCounter}",
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    "Dzisiejsze zadania",
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                  ),
-                  SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+      body: FutureBuilder<void>(
+        future: TaskApiService.fetchTasks(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Center(child: CircularProgressIndicator());
+          }
+
+          if (snapshot.hasError) {
+            return Center(child: Text("Blad: ${snapshot.error}"));
+          }
+
+          int doneCounter = TaskRepository.tasks.where((task) => task.done).length;
+          List<Task> filteredTasks = TaskRepository.tasks;
+
+          if (selectedFilter == "wykonane") {
+            filteredTasks = TaskRepository.tasks.where((task) => task.done).toList();
+          } else if (selectedFilter == "do zrobienia") {
+            filteredTasks = TaskRepository.tasks.where((task) => !task.done).toList();
+          }
+
+          return Padding(
+            padding: EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Column(
                     children: [
-                      TextButton(
-                        onPressed: () {
-                          setState(() {
-                            selectedFilter = "wszystkie";
-                          });
-                        },
-                        style: TextButton.styleFrom(
-                          foregroundColor: selectedFilter == "wszystkie"
-                              ? Colors.indigoAccent
-                              : Colors.grey,
-                          textStyle: TextStyle(
-                            fontWeight: selectedFilter == "wszystkie"
-                                ? FontWeight.bold
-                                : FontWeight.normal,
-                          ),
-                        ),
-                        child: Text("Wszystkie"),
+                      Text(
+                        "Liczba zadan: ${TaskRepository.tasks.length -
+                            doneCounter}, zrobiono: ${doneCounter}",
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
                       ),
-                      SizedBox(width: 12),
-                      TextButton(
-                        onPressed: () {
-                          setState(() {
-                            selectedFilter = "do zrobienia";
-                          });
-                        },
-                        style: TextButton.styleFrom(
-                          foregroundColor: selectedFilter == "do zrobienia"
-                              ? Colors.indigoAccent
-                              : Colors.grey,
-                          textStyle: TextStyle(
-                            fontWeight: selectedFilter == "do zrobienia"
-                                ? FontWeight.bold
-                                : FontWeight.normal,
-                          ),
-                        ),
-                        child: Text("Do zrobienia"),
+                      SizedBox(height: 8),
+                      Text(
+                        "Dzisiejsze zadania",
+                        style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                       ),
-                      SizedBox(width: 12),
-                      TextButton(
-                        onPressed: () {
-                          setState(() {
-                            selectedFilter = "wykonane";
-                          });
-                        },
-                        style: TextButton.styleFrom(
-                          foregroundColor: selectedFilter == "wykonane"
-                              ? Colors.indigoAccent
-                              : Colors.grey,
-                          textStyle: TextStyle(
-                            fontWeight: selectedFilter == "wykonane"
-                                ? FontWeight.bold
-                                : FontWeight.normal,
+                      SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          TextButton(
+                            onPressed: () {
+                              setState(() {
+                                selectedFilter = "wszystkie";
+                              });
+                            },
+                            style: TextButton.styleFrom(
+                              foregroundColor: selectedFilter == "wszystkie"
+                                  ? Colors.indigoAccent
+                                  : Colors.grey,
+                              textStyle: TextStyle(
+                                fontWeight: selectedFilter == "wszystkie"
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                              ),
+                            ),
+                            child: Text("Wszystkie"),
                           ),
-                        ),
-                        child: Text("Wykonane"),
+                          SizedBox(width: 12),
+                          TextButton(
+                            onPressed: () {
+                              setState(() {
+                                selectedFilter = "do zrobienia";
+                              });
+                            },
+                            style: TextButton.styleFrom(
+                              foregroundColor: selectedFilter == "do zrobienia"
+                                  ? Colors.indigoAccent
+                                  : Colors.grey,
+                              textStyle: TextStyle(
+                                fontWeight: selectedFilter == "do zrobienia"
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                              ),
+                            ),
+                            child: Text("Do zrobienia"),
+                          ),
+                          SizedBox(width: 12),
+                          TextButton(
+                            onPressed: () {
+                              setState(() {
+                                selectedFilter = "wykonane";
+                              });
+                            },
+                            style: TextButton.styleFrom(
+                              foregroundColor: selectedFilter == "wykonane"
+                                  ? Colors.indigoAccent
+                                  : Colors.grey,
+                              textStyle: TextStyle(
+                                fontWeight: selectedFilter == "wykonane"
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                              ),
+                            ),
+                            child: Text("Wykonane"),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ],
-              ),
-            ),
-            SizedBox(height: 20),
-            Expanded(
-              child: ListView.builder(
-                itemCount: filteredTasks.length,
-                itemBuilder: (context, index) {
-                  final task = filteredTasks[index];
-                  return Dismissible(
-                    key: ValueKey(task.title),
-                    direction: DismissDirection.startToEnd,
-                    onDismissed: (direction) {
-                      setState(() {
-                        TaskRepository.tasks.remove(task);
-                      });
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text("Zadanie usuniete")),
+                ),
+                SizedBox(height: 20),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: filteredTasks.length,
+                    itemBuilder: (context, index) {
+                      final task = filteredTasks[index];
+                      return Dismissible(
+                        key: ValueKey(task.title),
+                        direction: DismissDirection.startToEnd,
+                        onDismissed: (direction) {
+                          setState(() {
+                            TaskRepository.tasks.remove(task);
+                          });
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text("Zadanie usuniete")),
+                          );
+                        },
+                        child: TaskCard(
+                          task: task,
+                          onChanged: (value) {
+                            setState(() {
+                              task.done = value!;
+                            });
+                          },
+                          onTap: () async {
+                            final Task? updatedTask = await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => EditTaskScreen(task: task),
+                              ),
+                            );
+                            if (updatedTask != null) {
+                              setState(() {
+                                TaskRepository.tasks[index] = updatedTask;
+                              });
+                            }
+                          },
+                        ),
                       );
                     },
-                    child: TaskCard(
-                      task: task,
-                      onChanged: (value) {
-                        setState(() {
-                          task.done = value!;
-                        });
-                      },
-                      onTap: () async {
-                        final Task? updatedTask = await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => EditTaskScreen(task: task),
-                          ),
-                        );
-                        if (updatedTask != null) {
-                          setState(() {
-                            TaskRepository.tasks[index] = updatedTask;
-                          });
-                        }
-                      },
-                    ),
-                  );
-                },
-              ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          );
+        }
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
@@ -279,32 +328,7 @@ class TaskCard extends StatelessWidget {
 }
 
 class TaskRepository {
-  static List<Task> tasks = [
-    Task(
-      title: "Wyjsc z psem",
-      deadline: "o 12",
-      done: true,
-      priority: "wysoki",
-    ),
-    Task(
-      title: "Umyc podlogi",
-      deadline: "po salonie",
-      done: false,
-      priority: "niski",
-    ),
-    Task(
-      title: "Posprzatac salon",
-      deadline: "do 15",
-      done: false,
-      priority: "sredni",
-    ),
-    Task(
-      title: "Zrobic zakupy",
-      deadline: "do 10",
-      done: true,
-      priority: "wysoki",
-    ),
-  ];
+  static List<Task> tasks = [];
 }
 
 //-------------------------------------------------------------------------
