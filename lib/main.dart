@@ -1,24 +1,46 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 //import 'task_repository.dart';
 import 'dart:convert';
-import 'dart:math';
+import 'dart:math' hide log;
 import 'package:http/http.dart' as http;
 import 'package:hive_ce_flutter/hive_flutter.dart';
+import 'dart:developer';
+import 'services/notification_service.dart';
+
+const AndroidNotificationDetails androidDetails =
+    AndroidNotificationDetails(
+      'krakflow_tasks',
+      'KrakFlow tasks',
+      channelDescription: 'Powiadomienia o zadaniach w aplikacji KrakFlow',
+      importance: Importance.high,
+      priority: Priority.high,
+    );
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  await NotificationService.init();
+
   await Hive.initFlutter();
   await Hive.openBox("tasks");
+
   runApp(MyApp());
 }
 
 class TaskApiService {
   static Future<List<Task>> fetchTasks() async {
-    final response = await http.get(Uri.parse("https://dummyjson.com/todos"));
+    final url = "https://dummyjson.com/todos";
+    final response = await http.get(Uri.parse(url));
+
+    log("Adres zapytania: $url", name: "TaskApiService");
+    log("Kod odpowiedzi HTTP: ${response.statusCode}", name: "TaskApiService");
 
     if (response.statusCode == 200) {
       final data = jsonDecode((response.body));
       final List todos = data["todos"];
+
+      log("Pobrano zadan: ${todos.length}", name: "TaskApiService");
 
       return todos.map((todo) {
         return Task(
@@ -30,6 +52,7 @@ class TaskApiService {
         );
       }).toList();
     } else {
+      log("Nie udalo sie pobrac zadan", name: "TaskApiService", error: "Status odpowiedzi inny niz 200");
       throw Exception("Blad pobierania danych");
     }
   }
@@ -53,18 +76,22 @@ class TaskLocalDatabase {
 
   static Future<void> addTask(Task task) async {
     await _box.put(task.id, task.toMap());
+    log("Dodano zadanie", name: "TaskLocalDatabase");
   }
 
   static Future<void> updateTask(Task task) async {
     await _box.put(task.id, task.toMap());
+    log("Edytowanie zadanie / zmieniono status", name: "TaskLocalDatabase");
   }
 
   static Future<void> deleteTask(int id) async {
     await _box.delete(id);
+    log("Usunieto zadanie", name: "TaskLocalDatabase");
   }
 
   static Future<void> deleteAllTasks() async {
     await _box.clear();
+    log("Usunieto wszystkie zadania", name: "TaskLocalDatabase");
   }
 
   static bool isEmpty() {
@@ -178,7 +205,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     children: [
                       Text(
                         "Liczba zadan: ${tasks.length -
-                            doneCounter}, zrobiono: ${doneCounter}",
+                            doneCounter}, zrobiono: $doneCounter",
                         style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
                       ),
                       SizedBox(height: 8),
@@ -259,14 +286,22 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: TaskCard(
                           task: task,
                           onChanged: (value) async {
+                            final isDone = value ?? false;
+                            final wasDone = task.done;
+
                             final updatedTask = Task(
                               id: task.id,
                               title: task.title,
                               deadline: task.deadline,
                               priority: task.priority,
-                              done: value ?? false,
+                              done: isDone,
                             );
                             await TaskLocalDatabase.updateTask(updatedTask);
+
+                            if (!wasDone && isDone) {
+                              await NotificationService.showTaskDoneNotification(task.title);
+                            }
+
                             setState(() {
                               tasksFuture = _loadTasks();
                             });
